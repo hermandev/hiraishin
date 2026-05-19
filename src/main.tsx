@@ -5,6 +5,7 @@ import "./index.css";
 
 import { routeTree } from "./routeTree.gen";
 import TanStackQueryProvider from "./shared/provider/tanstack-query";
+import { ThemeProvider } from "./shared/provider/theme";
 
 const router = createRouter({ routeTree });
 
@@ -19,9 +20,11 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement);
   root.render(
     <StrictMode>
-      <TanStackQueryProvider>
-        <RouterProvider router={router} />
-      </TanStackQueryProvider>
+      <ThemeProvider>
+        <TanStackQueryProvider>
+          <RouterProvider router={router} />
+        </TanStackQueryProvider>
+      </ThemeProvider>
     </StrictMode>,
   );
 }

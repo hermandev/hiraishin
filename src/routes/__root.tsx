@@ -5,9 +5,11 @@ import TitleBar from "@/shared/components/title-bar";
 const RootLayout = () => {
   return (
     <div className="h-screen w-screen bg-transparent">
-      <div className="h-full w-full">
+      <div className="flex h-full min-h-0 w-full flex-col">
         <TitleBar />
-        <Outlet />
+        <main className="min-h-0 flex-1 overflow-hidden">
+          <Outlet />
+        </main>
       </div>
       <TanStackRouterDevtools />
     </div>
