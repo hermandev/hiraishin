@@ -3,6 +3,7 @@ name = "hiraishin"
 version = "0.1.0"
 description = "Cross-platform SSH terminal and port forwarding desktop client"
 authors = ["hermandev"]
+homepage = "https://github.com/hermandev"
 license = "MIT"
 edition = "2021"
 

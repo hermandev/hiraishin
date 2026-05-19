@@ -2,6 +2,11 @@
   "name": "hiraishin",
   "version": "0.1.0",
   "description": "Cross-platform SSH terminal and port forwarding desktop client",
+  "author": {
+    "name": "hermandev",
+    "url": "https://github.com/hermandev"
+  },
+  "homepage": "https://github.com/hermandev",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -129,6 +129,10 @@ bun run build
 cd src-tauri && cargo check
 ```
 
+## Author
+
+- [hermandev](https://github.com/hermandev)
+
 ## Keamanan
 
 Hiraishin menyimpan data koneksi di database lokal aplikasi. Jangan commit database lokal, private key, password, token, atau credential pribadi ke repository.
