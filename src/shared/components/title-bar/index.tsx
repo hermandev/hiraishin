@@ -1,10 +1,16 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ThemeToggle from "@/shared/components/theme-toggle";
 import ButtonWindow from "./button-window";
 
+function isMacPlatform() {
+  if (typeof navigator === "undefined") return false;
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+}
+
 export default function TitleBar() {
   const divRef = useRef<HTMLDivElement | null>(null);
+  const [isMacOs] = useState(isMacPlatform);
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
@@ -35,12 +41,20 @@ export default function TitleBar() {
 
   return (
     <div
-      className="h-8 w-full select-none border-b bg-background/80 backdrop-blur flex items-center"
+      className="flex h-8 w-full select-none items-center border-b bg-background/80 backdrop-blur"
       ref={divRef}
     >
-      <ButtonWindow appWindow={appWindow} />
-      <div className="ml-auto" data-no-drag>
+      {isMacOs && (
+        <div data-no-drag>
+          <ButtonWindow appWindow={appWindow} />
+        </div>
+      )}
+
+      <div className="flex-1" />
+
+      <div className="flex items-center" data-no-drag>
         <ThemeToggle />
+        {!isMacOs && <ButtonWindow appWindow={appWindow} />}
       </div>
     </div>
   );

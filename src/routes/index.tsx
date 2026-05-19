@@ -31,6 +31,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   type AuthMethod,
   api,
@@ -54,6 +55,7 @@ type ConnectionDraft = {
   username: string;
   authMethod: AuthMethod;
   password: string;
+  privateKey: string;
   privateKeyPath: string;
   passphrase: string;
   groupId: string;
@@ -87,6 +89,7 @@ function emptyDraft(): ConnectionDraft {
     username: "root",
     authMethod: "Password",
     password: "",
+    privateKey: "",
     privateKeyPath: "",
     passphrase: "",
     groupId: "",
@@ -104,6 +107,7 @@ function toConfig(draft: ConnectionDraft): SshConfig {
       username: draft.username.trim(),
       auth_method: draft.authMethod,
       password: draft.authMethod === "Password" ? draft.password : null,
+      private_key: draft.authMethod === "PubKey" ? draft.privateKey || null : null,
       private_key_path:
         draft.authMethod === "PubKey" ? draft.privateKeyPath || null : null,
       passphrase:
@@ -143,6 +147,7 @@ function fromConnection(connection: Connection): ConnectionDraft {
     username: connection.config.credential.username,
     authMethod: connection.config.credential.auth_method,
     password: connection.config.credential.password ?? "",
+    privateKey: connection.config.credential.private_key ?? "",
     privateKeyPath: connection.config.credential.private_key_path ?? "",
     passphrase: connection.config.credential.passphrase ?? "",
     groupId: connection.group_id ?? "",
@@ -865,8 +870,19 @@ function ConnectionDrawer({
             </Field>
           ) : (
             <>
+              <Field label="Private Key">
+                <Textarea
+                  className="min-h-32 font-mono text-xs"
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  value={draft.privateKey}
+                  onChange={(event) =>
+                    setDraft({ ...draft, privateKey: event.target.value })
+                  }
+                />
+              </Field>
               <Field label="Private Key Path">
                 <Input
+                  placeholder="Optional fallback path"
                   value={draft.privateKeyPath}
                   onChange={(event) =>
                     setDraft({ ...draft, privateKeyPath: event.target.value })

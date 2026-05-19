@@ -6,6 +6,7 @@ export type Credential = {
   username: string;
   auth_method: AuthMethod;
   password?: string | null;
+  private_key?: string | null;
   private_key_path?: string | null;
   passphrase?: string | null;
 };
