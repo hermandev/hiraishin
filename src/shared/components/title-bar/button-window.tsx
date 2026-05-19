@@ -14,7 +14,7 @@ export default function ButtonWindow({ appWindow }: Readonly<Props>) {
     await appWindow.minimize();
   };
   const handleMaximize = async () => {
-    await appWindow.maximize();
+    await appWindow.toggleMaximize();
   };
   return (
     <div className="flex items-center gap-2 px-2 group">
