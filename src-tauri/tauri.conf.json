@@ -27,6 +27,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "hermandev",
+    "category": "DeveloperTool",
+    "shortDescription": "SSH terminal and port forwarding desktop client.",
+    "longDescription": "Hiraishin is a cross-platform SSH workspace for managing saved servers, multi-tab terminals, encrypted credentials, and local port forwards.",
+    "copyright": "Copyright 2026 @hermandev",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release:desktop": "tauri build",
+    "release:macos": "tauri build --bundles app,dmg",
+    "release:windows": "tauri build --bundles nsis",
+    "release:linux": "tauri build --bundles deb,appimage"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

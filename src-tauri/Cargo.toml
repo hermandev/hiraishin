@@ -1,8 +1,8 @@
 [package]
 name = "hiraishin"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Cross-platform SSH terminal and port forwarding desktop client"
+authors = ["hermandev"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
