@@ -11,7 +11,7 @@
     "tauri": "tauri",
     "release:desktop": "tauri build",
     "release:macos": "tauri build --bundles app,dmg",
-    "release:windows": "tauri build --bundles nsis",
+    "release:windows": "tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
     "release:linux": "tauri build --bundles deb,appimage"
   },
   "dependencies": {
