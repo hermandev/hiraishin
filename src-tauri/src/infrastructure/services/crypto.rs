@@ -32,6 +32,13 @@ impl AesGcmCryptoService {
 
     pub fn load_or_create(path: impl AsRef<Path>) -> CryptoResult<Self> {
         let path = path.as_ref();
+        if !path.exists() {
+            let legacy_path = path.with_file_name("crypto.key");
+            if legacy_path.exists() {
+                fs::rename(&legacy_path, path)?;
+            }
+        }
+
         if path.exists() {
             let encoded = fs::read_to_string(path)?;
             let key = STANDARD.decode(encoded.trim())?;

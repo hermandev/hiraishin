@@ -38,6 +38,13 @@ impl ConnectionRepositoryImpl {
         crypto_service: Arc<dyn CryptoService>,
     ) -> DbResult<Self> {
         let path = db_path.into();
+        if !path.exists() {
+            let legacy_path = path.with_file_name("hiraishin.db");
+            if legacy_path.exists() {
+                std::fs::rename(&legacy_path, &path)?;
+            }
+        }
+
         let conn = SqliteConnection::open(&path)?;
         let repo = Self {
             conn: Arc::new(Mutex::new(conn)),

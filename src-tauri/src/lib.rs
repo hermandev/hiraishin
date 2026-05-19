@@ -28,12 +28,12 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
 
             let crypto_service = Arc::new(
-                AesGcmCryptoService::load_or_create(app_data_dir.join("crypto.key"))
+                AesGcmCryptoService::load_or_create(app_data_dir.join(".crypto.key"))
                     .map_err(|e| -> Box<dyn std::error::Error> { e })?,
             );
             let connection_db = Arc::new(tauri::async_runtime::block_on(
                 ConnectionRepositoryImpl::new(
-                    app_data_dir.join("hiraishin.db"),
+                    app_data_dir.join(".hiraishin.db"),
                     crypto_service.clone(),
                 ),
             )?);
