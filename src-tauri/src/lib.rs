@@ -27,13 +27,16 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
 
-            let connection_db = Arc::new(tauri::async_runtime::block_on(
-                ConnectionRepositoryImpl::new(app_data_dir.join("hiraishin.db")),
-            )?);
             let crypto_service = Arc::new(
                 AesGcmCryptoService::load_or_create(app_data_dir.join("crypto.key"))
                     .map_err(|e| -> Box<dyn std::error::Error> { e })?,
             );
+            let connection_db = Arc::new(tauri::async_runtime::block_on(
+                ConnectionRepositoryImpl::new(
+                    app_data_dir.join("hiraishin.db"),
+                    crypto_service.clone(),
+                ),
+            )?);
             let ssh_service = Arc::new(RusshSshService::new(app_data_dir.join("known_hosts")));
 
             app.manage(AppState::new(ssh_service, connection_db, crypto_service));

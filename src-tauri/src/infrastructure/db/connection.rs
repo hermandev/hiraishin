@@ -10,22 +10,41 @@ use crate::{
     domain::{
         models::connections::{Connection as SshConnection, Group, SshConfig},
         repository::{connection_repository::ConnectionRepository, RepoResult},
+        services::crypto_service::CryptoService,
     },
     infrastructure::db::{DbError, DbResult},
 };
 
+const ENCRYPTED_CONFIG_PREFIX: &str = "enc:v1:";
+type ConnectionRow = (
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+    String,
+);
+
 pub struct ConnectionRepositoryImpl {
     conn: Arc<Mutex<SqliteConnection>>,
+    crypto_service: Arc<dyn CryptoService>,
 }
 
 impl ConnectionRepositoryImpl {
-    pub async fn new(db_path: impl Into<PathBuf>) -> DbResult<Self> {
+    pub async fn new(
+        db_path: impl Into<PathBuf>,
+        crypto_service: Arc<dyn CryptoService>,
+    ) -> DbResult<Self> {
         let path = db_path.into();
         let conn = SqliteConnection::open(&path)?;
         let repo = Self {
             conn: Arc::new(Mutex::new(conn)),
+            crypto_service,
         };
         repo.run_migrations().await?;
+        repo.encrypt_existing_configs().await?;
         Ok(repo)
     }
 
@@ -62,7 +81,70 @@ impl ConnectionRepositoryImpl {
     }
 
     /// Helper untuk mengkonversi Connection ke row values
-    fn connection_to_row(
+    async fn encrypted_config_json(&self, config: &SshConfig) -> DbResult<String> {
+        let config_json = serde_json::to_string(config)?;
+        let encrypted = self
+            .crypto_service
+            .encrypt(&config_json)
+            .await
+            .map_err(|e| DbError::Crypto(e.to_string()))?;
+        Ok(format!("{ENCRYPTED_CONFIG_PREFIX}{encrypted}"))
+    }
+
+    async fn parse_config(&self, config_value: &str) -> DbResult<SshConfig> {
+        if let Some(cipher_text) = config_value.strip_prefix(ENCRYPTED_CONFIG_PREFIX) {
+            let plain = self
+                .crypto_service
+                .decrypt(cipher_text)
+                .await
+                .map_err(|e| DbError::Crypto(e.to_string()))?;
+            return Ok(serde_json::from_str(&plain)?);
+        }
+
+        match serde_json::from_str(config_value) {
+            Ok(config) => Ok(config),
+            Err(_) => {
+                let plain = self
+                    .crypto_service
+                    .decrypt(config_value)
+                    .await
+                    .map_err(|e| DbError::Crypto(e.to_string()))?;
+                Ok(serde_json::from_str(&plain)?)
+            }
+        }
+    }
+
+    async fn encrypt_existing_configs(&self) -> DbResult<()> {
+        let rows = {
+            let conn = self.conn.lock().expect("Connection Error");
+            let mut stmt = conn.prepare("SELECT id, config FROM connections")?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            rows.collect::<Result<Vec<(String, String)>, rusqlite::Error>>()?
+        };
+
+        for (id, config_value) in rows {
+            if config_value.starts_with(ENCRYPTED_CONFIG_PREFIX) {
+                continue;
+            }
+
+            let Ok(config) = serde_json::from_str::<SshConfig>(&config_value) else {
+                continue;
+            };
+            let encrypted_config = self.encrypted_config_json(&config).await?;
+            let conn = self.conn.lock().expect("Connection Error");
+            conn.execute(
+                "UPDATE connections SET config = ?1 WHERE id = ?2",
+                params![encrypted_config, id],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    async fn connection_to_row(
+        &self,
         conn: &SshConnection,
     ) -> DbResult<(
         String,
@@ -74,7 +156,7 @@ impl ConnectionRepositoryImpl {
         Option<String>,
         String,
     )> {
-        let config_json = serde_json::to_string(&conn.config)?;
+        let config_json = self.encrypted_config_json(&conn.config).await?;
         let tags_json = serde_json::to_string(&conn.tags)?;
         Ok((
             conn.id.clone(),
@@ -89,7 +171,8 @@ impl ConnectionRepositoryImpl {
     }
 
     /// Helper untuk membuat Connection dari row
-    fn row_to_connection(
+    async fn row_to_connection(
+        &self,
         id: String,
         name: String,
         description: Option<String>,
@@ -99,7 +182,7 @@ impl ConnectionRepositoryImpl {
         last_used_at_str: Option<String>,
         tags_json: String,
     ) -> DbResult<SshConnection> {
-        let config: SshConfig = serde_json::from_str(&config_json)?;
+        let config = self.parse_config(&config_json).await?;
         let tags: Vec<String> = serde_json::from_str(&tags_json)?;
         let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
             .map_err(|e| {
@@ -140,8 +223,10 @@ impl ConnectionRepositoryImpl {
 #[async_trait]
 impl ConnectionRepository for ConnectionRepositoryImpl {
     async fn save_connection(&self, conn: &SshConnection) -> RepoResult<()> {
-        let (id, name, desc, config_json, group_id, created_at, last_used_at, tags_json) =
-            Self::connection_to_row(conn).map_err(|e| anyhow::anyhow!(e))?;
+        let (id, name, desc, config_json, group_id, created_at, last_used_at, tags_json) = self
+            .connection_to_row(conn)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         let conn_lock = self.conn.lock().expect("Error Connection");
         conn_lock.execute(
@@ -165,13 +250,13 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
     }
 
     async fn get_connection(&self, id: &str) -> RepoResult<Option<SshConnection>> {
-        let conn_lock = self.conn.lock().expect("Error Connection");
-        let mut stmt = conn_lock.prepare(
-            "SELECT id, name, description, config, group_id, created_at, last_used_at, tags
-             FROM connections WHERE id = ?1",
-        )?;
-        let row = stmt
-            .query_row(params![id], |row| {
+        let row = {
+            let conn_lock = self.conn.lock().expect("Error Connection");
+            let mut stmt = conn_lock.prepare(
+                "SELECT id, name, description, config, group_id, created_at, last_used_at, tags
+                 FROM connections WHERE id = ?1",
+            )?;
+            stmt.query_row(params![id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -183,11 +268,56 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
                     row.get::<_, String>(7)?,
                 ))
             })
-            .optional()?;
+            .optional()?
+        };
 
         match row {
             Some((id, name, desc, config_json, group_id, created_at, last_used_at, tags_json)) => {
-                let conn = Self::row_to_connection(
+                let conn = self
+                    .row_to_connection(
+                        id,
+                        name,
+                        desc,
+                        config_json,
+                        group_id,
+                        created_at,
+                        last_used_at,
+                        tags_json,
+                    )
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e))?;
+                Ok(Some(conn))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn get_all_connections(&self) -> RepoResult<Vec<SshConnection>> {
+        let raw_rows = {
+            let conn_lock = self.conn.lock().expect("Error Connection");
+            let mut stmt = conn_lock.prepare(
+                "SELECT id, name, description, config, group_id, created_at, last_used_at, tags FROM connections ORDER BY name"
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<ConnectionRow>, rusqlite::Error>>()?
+        };
+
+        let mut connections = Vec::new();
+        for row in raw_rows {
+            let (id, name, desc, config_json, group_id, created_at, last_used_at, tags_json) = row;
+            let conn = self
+                .row_to_connection(
                     id,
                     name,
                     desc,
@@ -197,45 +327,8 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
                     last_used_at,
                     tags_json,
                 )
+                .await
                 .map_err(|e| anyhow::anyhow!(e))?;
-                Ok(Some(conn))
-            }
-            None => Ok(None),
-        }
-    }
-
-    async fn get_all_connections(&self) -> RepoResult<Vec<SshConnection>> {
-        let conn_lock = self.conn.lock().expect("Error Connection");
-        let mut stmt = conn_lock.prepare(
-            "SELECT id, name, description, config, group_id, created_at, last_used_at, tags FROM connections ORDER BY name"
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, String>(7)?,
-            ))
-        })?;
-
-        let mut connections = Vec::new();
-        for row in rows {
-            let (id, name, desc, config_json, group_id, created_at, last_used_at, tags_json) = row?;
-            let conn = Self::row_to_connection(
-                id,
-                name,
-                desc,
-                config_json,
-                group_id,
-                created_at,
-                last_used_at,
-                tags_json,
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
             connections.push(conn);
         }
         Ok(connections)
@@ -256,38 +349,43 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
     }
 
     async fn get_connections_by_group(&self, group_id: &str) -> RepoResult<Vec<SshConnection>> {
-        let conn_lock = self.conn.lock().expect("Error Connection");
-        let mut stmt = conn_lock.prepare(
-            "SELECT id, name, description, config, group_id, created_at, last_used_at, tags
-             FROM connections WHERE group_id = ?1 ORDER BY name",
-        )?;
-        let rows = stmt.query_map(params![group_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, String>(7)?,
-            ))
-        })?;
+        let raw_rows = {
+            let conn_lock = self.conn.lock().expect("Error Connection");
+            let mut stmt = conn_lock.prepare(
+                "SELECT id, name, description, config, group_id, created_at, last_used_at, tags
+                 FROM connections WHERE group_id = ?1 ORDER BY name",
+            )?;
+            let rows = stmt.query_map(params![group_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<ConnectionRow>, rusqlite::Error>>()?
+        };
 
         let mut connections = Vec::new();
-        for row in rows {
-            let (id, name, desc, config_json, gid, created_at, last_used_at, tags_json) = row?;
-            let conn = Self::row_to_connection(
-                id,
-                name,
-                desc,
-                config_json,
-                gid,
-                created_at,
-                last_used_at,
-                tags_json,
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
+        for row in raw_rows {
+            let (id, name, desc, config_json, gid, created_at, last_used_at, tags_json) = row;
+            let conn = self
+                .row_to_connection(
+                    id,
+                    name,
+                    desc,
+                    config_json,
+                    gid,
+                    created_at,
+                    last_used_at,
+                    tags_json,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
             connections.push(conn);
         }
         Ok(connections)
@@ -295,39 +393,44 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
 
     async fn search_connections(&self, query: &str) -> RepoResult<Vec<SshConnection>> {
         let pattern = format!("%{}%", query);
-        let conn_lock = self.conn.lock().expect("Error Connection");
-        let mut stmt = conn_lock.prepare(
-            "SELECT id, name, description, config, group_id, created_at, last_used_at, tags
-             FROM connections WHERE name LIKE ?1 OR description LIKE ?1
-             ORDER BY name",
-        )?;
-        let rows = stmt.query_map(params![pattern], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, String>(7)?,
-            ))
-        })?;
+        let raw_rows = {
+            let conn_lock = self.conn.lock().expect("Error Connection");
+            let mut stmt = conn_lock.prepare(
+                "SELECT id, name, description, config, group_id, created_at, last_used_at, tags
+                 FROM connections WHERE name LIKE ?1 OR description LIKE ?1
+                 ORDER BY name",
+            )?;
+            let rows = stmt.query_map(params![pattern], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            })?;
+            rows.collect::<Result<Vec<ConnectionRow>, rusqlite::Error>>()?
+        };
 
         let mut connections = Vec::new();
-        for row in rows {
-            let (id, name, desc, config_json, gid, created_at, last_used_at, tags_json) = row?;
-            let conn = Self::row_to_connection(
-                id,
-                name,
-                desc,
-                config_json,
-                gid,
-                created_at,
-                last_used_at,
-                tags_json,
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
+        for row in raw_rows {
+            let (id, name, desc, config_json, gid, created_at, last_used_at, tags_json) = row;
+            let conn = self
+                .row_to_connection(
+                    id,
+                    name,
+                    desc,
+                    config_json,
+                    gid,
+                    created_at,
+                    last_used_at,
+                    tags_json,
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
             connections.push(conn);
         }
         Ok(connections)

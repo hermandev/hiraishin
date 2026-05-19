@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use russh::{
     client,
     keys::{
-        check_known_hosts_path, known_hosts::learn_known_hosts_path, load_secret_key,
-        PrivateKeyWithHashAlg,
+        check_known_hosts_path, decode_secret_key, known_hosts::learn_known_hosts_path,
+        load_secret_key, PrivateKeyWithHashAlg,
     },
     Channel, ChannelMsg, Disconnect,
 };
@@ -106,18 +106,29 @@ impl RusshSshService {
                 }
             }
             AuthMethod::PubKey => {
-                let private_key_path =
-                    config
+                let key = if let Some(private_key) = config
+                    .credential
+                    .private_key
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    decode_secret_key(private_key, config.credential.passphrase.as_deref())?
+                } else {
+                    let private_key_path = config
                         .credential
                         .private_key_path
                         .as_deref()
+                        .filter(|value| !value.trim().is_empty())
                         .ok_or_else(|| {
-                            anyhow::anyhow!("public key authentication requires key path")
+                            anyhow::anyhow!(
+                                "public key authentication requires private key or key path"
+                            )
                         })?;
-                let key = load_secret_key(
-                    Path::new(private_key_path),
-                    config.credential.passphrase.as_deref(),
-                )?;
+                    load_secret_key(
+                        Path::new(private_key_path),
+                        config.credential.passphrase.as_deref(),
+                    )?
+                };
                 let hash_alg = handle.best_supported_rsa_hash().await?.flatten();
                 let auth = handle
                     .authenticate_publickey(

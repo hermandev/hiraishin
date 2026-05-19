@@ -10,6 +10,8 @@ pub enum DbError {
     Io(#[from] std::io::Error),
     #[error("Serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("Crypto error: {0}")]
+    Crypto(String),
     #[error("Connection not found: {0}")]
     NotFound(String),
 }

@@ -13,6 +13,7 @@ pub struct Credential {
     pub username: String,
     pub auth_method: AuthMethod,
     pub password: Option<String>, // encrypted di storage
+    pub private_key: Option<String>,
     pub private_key_path: Option<String>,
     pub passphrase: Option<String>, // untuk private key terenkripsi
 }
@@ -57,6 +58,7 @@ impl Default for SshConfig {
                 username: "root".to_string(),
                 auth_method: AuthMethod::Password,
                 password: None,
+                private_key: None,
                 private_key_path: None,
                 passphrase: None,
             },
