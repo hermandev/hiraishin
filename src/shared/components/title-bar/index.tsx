@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef } from "react";
+import ThemeToggle from "@/shared/components/theme-toggle";
 import ButtonWindow from "./button-window";
 
 export default function TitleBar() {
@@ -7,17 +8,29 @@ export default function TitleBar() {
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
-    if (divRef.current) {
-      divRef.current.addEventListener("mousedown", async (e: MouseEvent) => {
-        if (e.buttons === 1) {
-          if (e.detail === 2) {
-            await appWindow.toggleMaximize();
-          } else {
-            await appWindow.startDragging();
-          }
+    const titleBar = divRef.current;
+    if (!titleBar) return;
+
+    const handleMouseDown = async (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-no-drag]")) {
+        return;
+      }
+
+      if (event.buttons === 1) {
+        if (event.detail === 2) {
+          await appWindow.toggleMaximize();
+        } else {
+          await appWindow.startDragging();
         }
-      });
-    }
+      }
+    };
+
+    titleBar.addEventListener("mousedown", handleMouseDown);
+
+    return () => {
+      titleBar.removeEventListener("mousedown", handleMouseDown);
+    };
   }, [appWindow]);
 
   return (
@@ -26,6 +39,9 @@ export default function TitleBar() {
       ref={divRef}
     >
       <ButtonWindow appWindow={appWindow} />
+      <div className="ml-auto" data-no-drag>
+        <ThemeToggle />
+      </div>
     </div>
   );
 }
