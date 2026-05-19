@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 
 type Props = {
   appWindow: Window;
+  isMacOs: boolean;
 };
 
-export default function ButtonWindow({ appWindow }: Readonly<Props>) {
+export default function ButtonWindow({ appWindow, isMacOs }: Readonly<Props>) {
   const handleClose = async () => {
     await appWindow.close();
   };
@@ -16,6 +17,33 @@ export default function ButtonWindow({ appWindow }: Readonly<Props>) {
   const handleMaximize = async () => {
     await appWindow.toggleMaximize();
   };
+  if (!isMacOs) {
+    return (
+      <div className="flex items-center gap-2 px-2 group">
+        <Button
+          onClick={() => handleMaximize()}
+          className="w-4 h-4 rounded-full bg-green-500 hover:bg-green-600"
+          size="icon-xs"
+        >
+          <IconSelector className="rotate-140 opacity-0 group-hover:opacity-100" />
+        </Button>
+        <Button
+          onClick={() => handleMinimize()}
+          className="w-4 h-4 rounded-full bg-yellow-400 hover:bg-yellow-500"
+          size="icon-xs"
+        >
+          <IconMinus className="opacity-0 group-hover:opacity-100" />
+        </Button>
+        <Button
+          onClick={() => handleClose()}
+          className="w-4 h-4 rounded-full bg-red-500 hover:bg-red-600"
+          size="icon-xs"
+        >
+          <IconX className="opacity-0 group-hover:opacity-100" />
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2 px-2 group">
       <Button

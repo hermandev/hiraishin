@@ -46,7 +46,7 @@ export default function TitleBar() {
     >
       {isMacOs && (
         <div data-no-drag>
-          <ButtonWindow appWindow={appWindow} />
+          <ButtonWindow isMacOs={isMacOs} appWindow={appWindow} />
         </div>
       )}
 
@@ -54,7 +54,7 @@ export default function TitleBar() {
 
       <div className="flex items-center" data-no-drag>
         <ThemeToggle />
-        {!isMacOs && <ButtonWindow appWindow={appWindow} />}
+        {!isMacOs && <ButtonWindow isMacOs={isMacOs} appWindow={appWindow} />}
       </div>
     </div>
   );
