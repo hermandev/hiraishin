@@ -22,10 +22,37 @@ bun run release:windows
 bun run release:linux
 ```
 
+Linux bundles must be built on Linux. Running `bun run release:linux` on macOS will fail because
+Tauri only enables bundle types supported by the current host, so macOS only accepts `app` and `dmg`.
+Use Ubuntu, a Linux VM/container with Tauri system dependencies, or the GitHub Actions release workflow.
+
 Tauri outputs bundles under:
 
 ```text
 src-tauri/target/release/bundle/
+```
+
+### Linux Build
+
+Install Linux build dependencies before creating `.deb` and `.AppImage` bundles:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+```
+
+Then run from a Linux host:
+
+```sh
+bun install --frozen-lockfile
+bun run release:linux
+```
+
+Linux output paths:
+
+```text
+src-tauri/target/release/bundle/deb/
+src-tauri/target/release/bundle/appimage/
 ```
 
 ### Windows Build From macOS

@@ -4,14 +4,16 @@
     "targets": ["deb", "appimage"],
     "linux": {
       "appimage": {
-        "bundleMediaFramework": false
+        "bundleMediaFramework": false,
+        "files": {}
       },
       "deb": {
         "depends": [
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0",
           "libayatana-appindicator3-1"
-        ]
+        ],
+        "files": {}
       }
     }
   }
