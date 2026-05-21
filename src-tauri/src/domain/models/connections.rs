@@ -71,6 +71,40 @@ pub struct SavedPortForward {
     pub status: PortForwardStatus,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ScriptRunStatus {
+    Idle,
+    Running,
+    Success,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedScript {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub connection_id: String,
+    pub connection_name: String,
+    pub script: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_run_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptRunInfo {
+    pub id: String,
+    pub script_id: String,
+    pub script_name: String,
+    pub connection_id: String,
+    pub connection_name: String,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub status: ScriptRunStatus,
+    pub exit_code: Option<i32>,
+}
+
 impl Default for SshConfig {
     fn default() -> Self {
         Self {

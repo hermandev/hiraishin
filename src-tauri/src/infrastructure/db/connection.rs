@@ -9,7 +9,8 @@ use rusqlite::{params, Connection as SqliteConnection, OptionalExtension};
 use crate::{
     domain::{
         models::connections::{
-            Connection as SshConnection, Group, PortForwardStatus, SavedPortForward, SshConfig,
+            Connection as SshConnection, Group, PortForwardStatus, SavedPortForward, SavedScript,
+            SshConfig,
         },
         repository::{connection_repository::ConnectionRepository, RepoResult},
         services::crypto_service::CryptoService,
@@ -101,6 +102,21 @@ impl ConnectionRepositoryImpl {
 
                 CREATE INDEX IF NOT EXISTS idx_port_forwards_connection ON port_forwards(connection_id);
                 CREATE INDEX IF NOT EXISTS idx_port_forwards_label ON port_forwards(label);
+
+                CREATE TABLE IF NOT EXISTS scripts (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    connection_id TEXT NOT NULL,
+                    connection_name TEXT NOT NULL,
+                    script TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_run_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_scripts_connection ON scripts(connection_id);
+                CREATE INDEX IF NOT EXISTS idx_scripts_name ON scripts(name);
                 "#,
         )?;
         Ok(())
@@ -695,6 +711,144 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
     async fn delete_port_forward(&self, id: &str) -> RepoResult<()> {
         let conn_lock = self.conn.lock().expect("Error Connection");
         let affected = conn_lock.execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
+        if affected == 0 {
+            return Err(Box::new(DbError::NotFound(id.to_string())));
+        }
+        Ok(())
+    }
+
+    async fn save_script(&self, script: &SavedScript) -> RepoResult<()> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        conn_lock.execute(
+            r#"
+            INSERT OR REPLACE INTO scripts
+            (id, name, description, connection_id, connection_name, script, created_at, updated_at, last_run_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "#,
+            params![
+                script.id,
+                script.name,
+                script.description,
+                script.connection_id,
+                script.connection_name,
+                script.script,
+                script.created_at.to_rfc3339(),
+                script.updated_at.to_rfc3339(),
+                script.last_run_at.map(|d| d.to_rfc3339()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn get_script(&self, id: &str) -> RepoResult<Option<SavedScript>> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        let mut stmt = conn_lock.prepare(
+            r#"
+            SELECT id, name, description, connection_id, connection_name, script,
+                   created_at, updated_at, last_run_at
+            FROM scripts WHERE id = ?1
+            "#,
+        )?;
+        let row = stmt
+            .query_row(params![id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                ))
+            })
+            .optional()?;
+
+        row.map(
+            |(
+                id,
+                name,
+                description,
+                connection_id,
+                connection_name,
+                script,
+                created_at,
+                updated_at,
+                last_run_at,
+            )| {
+                Ok(SavedScript {
+                    id,
+                    name,
+                    description,
+                    connection_id,
+                    connection_name,
+                    script,
+                    created_at: Self::parse_datetime(created_at)?,
+                    updated_at: Self::parse_datetime(updated_at)?,
+                    last_run_at: Self::parse_optional_datetime(last_run_at)?,
+                })
+            },
+        )
+        .transpose()
+        .map_err(|e: DbError| anyhow::anyhow!(e).into())
+    }
+
+    async fn get_all_scripts(&self) -> RepoResult<Vec<SavedScript>> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        let mut stmt = conn_lock.prepare(
+            r#"
+            SELECT id, name, description, connection_id, connection_name, script,
+                   created_at, updated_at, last_run_at
+            FROM scripts ORDER BY name
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, Option<String>>(8)?,
+            ))
+        })?;
+
+        let mut scripts = Vec::new();
+        for row in rows {
+            let (
+                id,
+                name,
+                description,
+                connection_id,
+                connection_name,
+                script,
+                created_at,
+                updated_at,
+                last_run_at,
+            ) = row?;
+            scripts.push(SavedScript {
+                id,
+                name,
+                description,
+                connection_id,
+                connection_name,
+                script,
+                created_at: Self::parse_datetime(created_at).map_err(|e| anyhow::anyhow!(e))?,
+                updated_at: Self::parse_datetime(updated_at).map_err(|e| anyhow::anyhow!(e))?,
+                last_run_at: Self::parse_optional_datetime(last_run_at)
+                    .map_err(|e| anyhow::anyhow!(e))?,
+            });
+        }
+        Ok(scripts)
+    }
+
+    async fn delete_script(&self, id: &str) -> RepoResult<()> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        let affected = conn_lock.execute("DELETE FROM scripts WHERE id = ?1", params![id])?;
         if affected == 0 {
             return Err(Box::new(DbError::NotFound(id.to_string())));
         }

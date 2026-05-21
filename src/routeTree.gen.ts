@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ScriptRunnerRouteImport } from './routes/script-runner'
 import { Route as PortForwardRouteImport } from './routes/port-forward'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ScriptRunnerRoute = ScriptRunnerRouteImport.update({
+  id: '/script-runner',
+  path: '/script-runner',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortForwardRoute = PortForwardRouteImport.update({
   id: '/port-forward',
   path: '/port-forward',
@@ -33,34 +39,45 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/port-forward': typeof PortForwardRoute
+  '/script-runner': typeof ScriptRunnerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/port-forward': typeof PortForwardRoute
+  '/script-runner': typeof ScriptRunnerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/port-forward': typeof PortForwardRoute
+  '/script-runner': typeof ScriptRunnerRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/port-forward'
+  fullPaths: '/' | '/about' | '/port-forward' | '/script-runner'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/port-forward'
-  id: '__root__' | '/' | '/about' | '/port-forward'
+  to: '/' | '/about' | '/port-forward' | '/script-runner'
+  id: '__root__' | '/' | '/about' | '/port-forward' | '/script-runner'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   PortForwardRoute: typeof PortForwardRoute
+  ScriptRunnerRoute: typeof ScriptRunnerRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/script-runner': {
+      id: '/script-runner'
+      path: '/script-runner'
+      fullPath: '/script-runner'
+      preLoaderRoute: typeof ScriptRunnerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/port-forward': {
       id: '/port-forward'
       path: '/port-forward'
@@ -89,6 +106,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   PortForwardRoute: PortForwardRoute,
+  ScriptRunnerRoute: ScriptRunnerRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

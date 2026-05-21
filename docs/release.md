@@ -1,5 +1,29 @@
 # Release Desktop
 
+## Release Notes v0.1.2
+
+### Added
+
+- Added encrypted local database support for stored SSH credentials and private keys.
+- Added persistent port forward management with labels, saved records, and realtime connection status.
+- Added Script Runner for saving multiple bash scripts per server and running them manually for deploy-style workflows.
+- Added parallel script execution so one script can run while another script is still active.
+- Added runner trace list with terminal output view per active run.
+- Added CodeMirror script editor with shell syntax highlighting and light/dark theme support.
+- Added bottom-right Sonner toast notifications for action and test results.
+
+### Improved
+
+- SSH terminal tabs now stay open and connected when navigating away from and back to the main page.
+- Script runner output now streams stdout/stderr and bash trace details for clearer execution feedback.
+- Script runner layout now follows the port forward page pattern: server selector, script list, search filter, editor, and trace panel.
+
+### Fixed
+
+- Fixed script runner records being overwritten across servers by supporting multiple saved scripts per server.
+- Fixed script run controls so only the active item is disabled during its own action.
+- Fixed noisy shell wrapper output by using non-interactive execution and filtering internal script markers.
+
 Hiraishin uses Tauri v2 platform-specific config files:
 
 - `src-tauri/tauri.macos.conf.json`: builds `.app` and `.dmg`

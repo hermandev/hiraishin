@@ -19,6 +19,13 @@ pub trait SshService: Send + Sync {
     /// Membuka session untuk command tunggal (non-interaktif)
     async fn exec_command(&self, config: SshConfig, command: &str) -> SshResult<String>;
 
+    /// Membuka session command non-interaktif yang output-nya bisa dibaca bertahap.
+    async fn exec_session(
+        &self,
+        config: SshConfig,
+        command: &str,
+    ) -> SshResult<Box<dyn SshSession>>;
+
     /// Test koneksi (handshake + auth) tanpa membuka shell.
     async fn test_connection(&self, config: SshConfig) -> SshResult<bool>;
 

@@ -16,6 +16,13 @@ pub struct ActivePortForward {
     pub task: PortForwardTask,
 }
 
+pub struct ActiveScriptRun {
+    pub info: crate::domain::models::connections::ScriptRunInfo,
+    pub output: String,
+    pub sent_len: usize,
+    pub session: Box<dyn SshSession>,
+}
+
 /// State global aplikasi yang dikelola Tauri.
 /// Semua field adalah thread-safe (Send + Sync) karena dibungkus dengan Arc/Mutex.
 pub struct AppState {
@@ -24,6 +31,9 @@ pub struct AppState {
 
     /// Port forward aktif (key: forward_id)
     pub active_port_forwards: Mutex<HashMap<String, ActivePortForward>>,
+
+    /// Script runner aktif (key: run_id)
+    pub active_script_runs: Mutex<HashMap<String, ActiveScriptRun>>,
 
     /// Service untuk operasi SSH (connect, exec, dll)
     pub ssh_service: Arc<dyn SshService>,
@@ -44,6 +54,7 @@ impl AppState {
         Self {
             active_sessions: Mutex::new(HashMap::new()),
             active_port_forwards: Mutex::new(HashMap::new()),
+            active_script_runs: Mutex::new(HashMap::new()),
             ssh_service,
             connection_repo,
             crypto_service,
@@ -70,5 +81,15 @@ impl AppState {
     pub async fn remove_port_forward(&self, forward_id: &str) -> Option<ActivePortForward> {
         let mut forwards = self.active_port_forwards.lock().await;
         forwards.remove(forward_id)
+    }
+
+    pub async fn add_script_run(&self, run_id: String, run: ActiveScriptRun) {
+        let mut runs = self.active_script_runs.lock().await;
+        runs.insert(run_id, run);
+    }
+
+    pub async fn remove_script_run(&self, run_id: &str) -> Option<ActiveScriptRun> {
+        let mut runs = self.active_script_runs.lock().await;
+        runs.remove(run_id)
     }
 }

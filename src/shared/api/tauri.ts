@@ -68,6 +68,45 @@ export type PortForwardInfo = {
   status: "Connected" | "Disconnected";
 };
 
+export type SavedScript = {
+  id: string;
+  name: string;
+  description?: string | null;
+  connection_id: string;
+  connection_name: string;
+  script: string;
+  created_at: string;
+  updated_at: string;
+  last_run_at?: string | null;
+};
+
+export type SaveScriptRequest = {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  connection_id: string;
+  script: string;
+};
+
+export type ScriptRunStatus = "Idle" | "Running" | "Success" | "Failed";
+
+export type ScriptRunInfo = {
+  id: string;
+  script_id: string;
+  script_name: string;
+  connection_id: string;
+  connection_name: string;
+  started_at: string;
+  finished_at?: string | null;
+  status: ScriptRunStatus;
+  exit_code?: number | null;
+};
+
+export type ScriptRunRead = {
+  output: string;
+  info: ScriptRunInfo;
+};
+
 export const api = {
   saveConnection: (connection: Connection) =>
     invoke<void>("save_connection", { connection }),
@@ -95,6 +134,16 @@ export const api = {
     invoke<number[]>("crypto_hash_password", { password, salt }),
   cryptoVerifyPassword: (password: string, hash: number[], salt: number[]) =>
     invoke<boolean>("crypto_verify_password", { password, hash, salt }),
+
+  scriptSave: (request: SaveScriptRequest) =>
+    invoke<SavedScript>("script_save", { request }),
+  scriptList: () => invoke<SavedScript[]>("script_list"),
+  scriptDelete: (id: string) => invoke<void>("script_delete", { id }),
+  scriptStart: (scriptId: string) =>
+    invoke<ScriptRunInfo>("script_start", { scriptId }),
+  scriptReadRun: (runId: string, maxLen: number) =>
+    invoke<ScriptRunRead>("script_read_run", { runId, maxLen }),
+  scriptStopRun: (runId: string) => invoke<void>("script_stop_run", { runId }),
 
   sshTestConnection: (config: SshConfig) =>
     invoke<boolean>("ssh_test_connection", { config }),
