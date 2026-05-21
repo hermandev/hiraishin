@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowLeft,
+  Play,
   PlugZap,
   Plus,
   RefreshCcw,
   Server,
+  Trash2,
 } from "lucide-react";
 import {
   type FormEvent,
@@ -32,6 +34,7 @@ function PortForwardRoute() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [forwards, setForwards] = useState<PortForwardInfo[]>([]);
   const [connectionId, setConnectionId] = useState("");
+  const [label, setLabel] = useState("");
   const [localAddr, setLocalAddr] = useState("127.0.0.1:9000");
   const [remoteAddr, setRemoteAddr] = useState("127.0.0.1:80");
   const [busy, setBusy] = useState(false);
@@ -85,6 +88,16 @@ function PortForwardRoute() {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void api
+        .sshListLocalPortForwards()
+        .then(setForwards)
+        .catch(showError);
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [showError]);
+
   const startForward = (event: FormEvent) => {
     event.preventDefault();
     if (!selectedConnection) return;
@@ -92,9 +105,10 @@ function PortForwardRoute() {
     setBusy(true);
     setToast(null);
     api
-      .sshStartLocalPortForward(selectedConnection, localAddr, remoteAddr)
+      .sshStartLocalPortForward(selectedConnection, label, localAddr, remoteAddr)
       .then((forward) => {
         setForwards((items) => [...items, forward]);
+        setLabel("");
         showOk(`Forwarding ${forward.local_addr} to ${forward.remote_addr}`);
       })
       .catch(showError)
@@ -107,8 +121,44 @@ function PortForwardRoute() {
     api
       .sshStopLocalPortForward(forward.id)
       .then(() => {
-        setForwards((items) => items.filter((item) => item.id !== forward.id));
+        setForwards((items) =>
+          items.map((item) =>
+            item.id === forward.id
+              ? { ...item, status: "Disconnected" }
+              : item,
+          ),
+        );
         showOk(`Stopped ${forward.local_addr}`);
+      })
+      .catch(showError)
+      .finally(() => setBusy(false));
+  };
+
+  const connectForward = (forward: PortForwardInfo) => {
+    setBusy(true);
+    setToast(null);
+    api
+      .sshConnectSavedLocalPortForward(forward.id)
+      .then((nextForward) => {
+        setForwards((items) =>
+          items.map((item) =>
+            item.id === nextForward.id ? nextForward : item,
+          ),
+        );
+        showOk(`Forwarding ${nextForward.local_addr}`);
+      })
+      .catch(showError)
+      .finally(() => setBusy(false));
+  };
+
+  const deleteForward = (forward: PortForwardInfo) => {
+    setBusy(true);
+    setToast(null);
+    api
+      .sshDeleteLocalPortForward(forward.id)
+      .then(() => {
+        setForwards((items) => items.filter((item) => item.id !== forward.id));
+        showOk(`Deleted ${forward.label}`);
       })
       .catch(showError)
       .finally(() => setBusy(false));
@@ -156,7 +206,9 @@ function PortForwardRoute() {
           <div className="min-h-0 space-y-2 overflow-auto p-3">
             {connections.map((connection) => {
               const activeCount =
-                forwardsByConnection[connection.id]?.length ?? 0;
+                forwardsByConnection[connection.id]?.filter(
+                  (forward) => forward.status === "Connected",
+                ).length ?? 0;
               return (
                 <button
                   key={connection.id}
@@ -190,9 +242,16 @@ function PortForwardRoute() {
         <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
           <div className="border-b p-4">
             <form
-              className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3"
+              className="grid grid-cols-[minmax(160px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3"
               onSubmit={startForward}
             >
+              <Field label="Label">
+                <Input
+                  required
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                />
+              </Field>
               <Field label="Local Address">
                 <Input
                   required
@@ -220,6 +279,8 @@ function PortForwardRoute() {
                 busy={busy}
                 connection={selectedConnection}
                 forwards={forwardsByConnection[selectedConnection.id] ?? []}
+                onConnect={connectForward}
+                onDelete={deleteForward}
                 onStop={stopForward}
               />
             ) : (
@@ -238,13 +299,21 @@ function ServerForwardList({
   busy,
   connection,
   forwards,
+  onConnect,
+  onDelete,
   onStop,
 }: {
   busy: boolean;
   connection: Connection;
   forwards: PortForwardInfo[];
+  onConnect: (forward: PortForwardInfo) => void;
+  onDelete: (forward: PortForwardInfo) => void;
   onStop: (forward: PortForwardInfo) => void;
 }) {
+  const connectedCount = forwards.filter(
+    (forward) => forward.status === "Connected",
+  ).length;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -258,7 +327,9 @@ function ServerForwardList({
             {connection.config.port}
           </div>
         </div>
-        <Badge className="bg-muted/60">{forwards.length} active</Badge>
+        <Badge className="bg-muted/60">
+          {connectedCount}/{forwards.length} connected
+        </Badge>
       </div>
 
       {forwards.length === 0 ? (
@@ -274,10 +345,16 @@ function ServerForwardList({
               <CardHeader className="h-11 relative">
                 <div className="min-w-0 flex truncate text-xs font-semibold">
                   <PlugZap className="size-4 mr-2" />
-                  {forward.local_addr}
+                  {forward.label}
                 </div>
-                <Badge className="border-primary/40 bg-primary/10 absolute top-0 right-2">
-                  Active
+                <Badge
+                  className={`absolute top-0 right-2 ${
+                    forward.status === "Connected"
+                      ? "border-primary/40 bg-primary/10"
+                      : "border-muted-foreground/30 bg-muted/60 text-muted-foreground"
+                  }`}
+                >
+                  {forward.status === "Connected" ? "Connected" : "Disconnected"}
                 </Badge>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -291,16 +368,38 @@ function ServerForwardList({
                     {forward.remote_addr}
                   </div>
                 </div>
-                <Button
-                  className="w-full"
-                  disabled={busy}
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => onStop(forward)}
-                >
-                  <IconPlugConnectedX />
-                  Disconnect
-                </Button>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                  {forward.status === "Connected" ? (
+                    <Button
+                      className="w-full"
+                      disabled={busy}
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => onStop(forward)}
+                    >
+                      <IconPlugConnectedX />
+                      Disconnect
+                    </Button>
+                  ) : (
+                    <Button
+                      className="w-full"
+                      disabled={busy}
+                      size="sm"
+                      onClick={() => onConnect(forward)}
+                    >
+                      <Play />
+                      Connect
+                    </Button>
+                  )}
+                  <Button
+                    disabled={busy}
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={() => onDelete(forward)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           ))}

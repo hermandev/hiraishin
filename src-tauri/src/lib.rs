@@ -70,7 +70,9 @@ pub fn run() {
             commands::ssh::ssh_session_info,
             commands::ssh::ssh_start_local_port_forward,
             commands::ssh::ssh_stop_local_port_forward,
-            commands::ssh::ssh_list_local_port_forwards
+            commands::ssh::ssh_connect_saved_local_port_forward,
+            commands::ssh::ssh_list_local_port_forwards,
+            commands::ssh::ssh_delete_local_port_forward
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

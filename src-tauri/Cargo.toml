@@ -1,6 +1,6 @@
 [package]
 name = "hiraishin"
-version = "0.1.0"
+version = "0.1.1"
 description = "Cross-platform SSH terminal and port forwarding desktop client"
 authors = ["hermandev"]
 homepage = "https://github.com/hermandev"

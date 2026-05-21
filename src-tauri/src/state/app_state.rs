@@ -13,13 +13,6 @@ use crate::domain::{
 
 pub struct ActivePortForward {
     pub id: String,
-    pub connection_id: String,
-    pub connection_name: String,
-    pub host: String,
-    pub username: String,
-    pub local_addr: String,
-    pub remote_addr: String,
-    pub started_at: chrono::DateTime<chrono::Utc>,
     pub task: PortForwardTask,
 }
 

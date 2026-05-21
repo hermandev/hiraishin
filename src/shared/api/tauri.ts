@@ -55,13 +55,17 @@ export type SessionInfo = {
 
 export type PortForwardInfo = {
   id: string;
+  label: string;
   connection_id: string;
   connection_name: string;
   host: string;
   username: string;
   local_addr: string;
   remote_addr: string;
-  started_at: string;
+  created_at: string;
+  last_started_at?: string | null;
+  last_stopped_at?: string | null;
+  status: "Connected" | "Disconnected";
 };
 
 export const api = {
@@ -110,16 +114,24 @@ export const api = {
     invoke<SessionInfo>("ssh_session_info", { sessionId }),
   sshStartLocalPortForward: (
     connection: Connection,
+    label: string,
     localAddr: string,
     remoteAddr: string,
   ) =>
     invoke<PortForwardInfo>("ssh_start_local_port_forward", {
       connection,
+      label,
       localAddr,
       remoteAddr,
     }),
   sshStopLocalPortForward: (forwardId: string) =>
     invoke<void>("ssh_stop_local_port_forward", { forwardId }),
+  sshConnectSavedLocalPortForward: (forwardId: string) =>
+    invoke<PortForwardInfo>("ssh_connect_saved_local_port_forward", {
+      forwardId,
+    }),
+  sshDeleteLocalPortForward: (forwardId: string) =>
+    invoke<void>("ssh_delete_local_port_forward", { forwardId }),
   sshListLocalPortForwards: () =>
     invoke<PortForwardInfo[]>("ssh_list_local_port_forwards"),
 };

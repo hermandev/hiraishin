@@ -19,7 +19,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -37,10 +36,13 @@ import {
   api,
   type Connection,
   type Group,
-  type SessionInfo,
   type SshConfig,
 } from "@/shared/api/tauri";
 import AppTerminal from "@/shared/components/terminal";
+import {
+  type TerminalTab,
+  useSshTerminals,
+} from "@/shared/provider/ssh-terminals";
 
 export const Route = createFileRoute("/")({
   component: RouteComponent,
@@ -64,20 +66,7 @@ type ConnectionDraft = {
   keepaliveInterval: string;
 };
 
-type TerminalTab = {
-  id: string;
-  connectionId: string;
-  title: string;
-  subtitle: string;
-  chunks: string[];
-  size: { cols: number; rows: number };
-  info: SessionInfo | null;
-};
-
 type Toast = { kind: "ok" | "error"; message: string };
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 function emptyDraft(): ConnectionDraft {
   return {
@@ -166,26 +155,25 @@ function RouteComponent() {
   const [query, setQuery] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
-  const [terminalTabs, setTerminalTabs] = useState<TerminalTab[]>([]);
-  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
-  const readInFlightRef = useRef<Record<string, boolean>>({});
-  const terminalTabsRef = useRef<TerminalTab[]>([]);
-
-  useEffect(() => {
-    terminalTabsRef.current = terminalTabs;
-  }, [terminalTabs]);
+  const {
+    activeTerminal,
+    activeTerminalId,
+    clearTerminalError,
+    closeSession: closeSshSession,
+    openSession: openSshSession,
+    resizeTerminal,
+    sendTerminalData,
+    setActiveTerminalId,
+    terminalError,
+    terminalTabs,
+  } = useSshTerminals();
 
   const selectedConnection = useMemo(
     () =>
       connections.find((connection) => connection.id === selectedId) ?? null,
     [connections, selectedId],
-  );
-
-  const activeTerminal = useMemo(
-    () => terminalTabs.find((tab) => tab.id === activeTerminalId) ?? null,
-    [activeTerminalId, terminalTabs],
   );
 
   const filteredConnections = useMemo(() => {
@@ -229,40 +217,10 @@ function RouteComponent() {
   }, [loadData]);
 
   useEffect(() => {
-    const interval = window.setInterval(async () => {
-      for (const tab of terminalTabsRef.current) {
-        if (readInFlightRef.current[tab.id]) continue;
-        readInFlightRef.current[tab.id] = true;
-        try {
-          const bytes = await api.sshReadData(tab.id, 8192);
-          if (bytes.length > 0) {
-            const chunk = decoder.decode(new Uint8Array(bytes));
-            setTerminalTabs((tabs) =>
-              tabs.map((item) =>
-                item.id === tab.id
-                  ? { ...item, chunks: [...item.chunks, chunk] }
-                  : item,
-              ),
-            );
-          }
-        } catch (error) {
-          delete readInFlightRef.current[tab.id];
-          setTerminalTabs((tabs) => tabs.filter((item) => item.id !== tab.id));
-          setActiveTerminalId((current) => {
-            if (current !== tab.id) return current;
-            const remaining = terminalTabsRef.current.filter(
-              (item) => item.id !== tab.id,
-            );
-            return remaining[remaining.length - 1]?.id ?? null;
-          });
-          showError(error);
-        } finally {
-          readInFlightRef.current[tab.id] = false;
-        }
-      }
-    }, 50);
-    return () => window.clearInterval(interval);
-  }, [showError]);
+    if (!terminalError) return;
+    showError(terminalError);
+    clearTerminalError();
+  }, [clearTerminalError, showError, terminalError]);
 
   const withBusy = useCallback(
     async (task: () => Promise<void>) => {
@@ -345,37 +303,11 @@ function RouteComponent() {
     });
   };
 
-  const removeTerminalTab = useCallback((id: string) => {
-    delete readInFlightRef.current[id];
-    setTerminalTabs((tabs) => tabs.filter((tab) => tab.id !== id));
-    setActiveTerminalId((current) => {
-      if (current !== id) return current;
-      const remaining = terminalTabsRef.current.filter((tab) => tab.id !== id);
-      return remaining[remaining.length - 1]?.id ?? null;
-    });
-  }, []);
-
   const openSession = (connection = selectedConnection) => {
     if (!connection) return;
     void withBusy(async () => {
       setSelectedId(connection.id);
-      const id = await api.sshOpenSession(connection.config);
-      const size = activeTerminal?.size ?? { cols: 80, rows: 24 };
-      await api.sshResize(id, size.cols, size.rows);
-      const info = await api.sshSessionInfo(id);
-      setTerminalTabs((tabs) => [
-        ...tabs,
-        {
-          id,
-          connectionId: connection.id,
-          title: connection.name,
-          subtitle: `${connection.config.credential.username}@${connection.config.host}:${connection.config.port}`,
-          chunks: [],
-          size,
-          info,
-        },
-      ]);
-      setActiveTerminalId(id);
+      await openSshSession(connection);
       showOk("Connected");
     });
   };
@@ -383,39 +315,11 @@ function RouteComponent() {
   const closeSession = useCallback(
     (id: string) => {
       void withBusy(async () => {
-        await api.sshCloseSession(id).catch(() => undefined);
-        removeTerminalTab(id);
+        await closeSshSession(id);
         showOk("Disconnected");
       });
     },
-    [removeTerminalTab, showOk, withBusy],
-  );
-
-  const sendTerminalData = useCallback(
-    (sessionId: string, data: string) => {
-      void api
-        .sshSendData(sessionId, Array.from(encoder.encode(data)))
-        .catch((error) => {
-          removeTerminalTab(sessionId);
-          showError(error);
-        });
-    },
-    [removeTerminalTab, showError],
-  );
-
-  const resizeTerminal = useCallback(
-    (sessionId: string, cols: number, rows: number) => {
-      setTerminalTabs((tabs) =>
-        tabs.map((tab) =>
-          tab.id === sessionId ? { ...tab, size: { cols, rows } } : tab,
-        ),
-      );
-      void api.sshResize(sessionId, cols, rows).catch((error) => {
-        removeTerminalTab(sessionId);
-        showError(error);
-      });
-    },
-    [removeTerminalTab, showError],
+    [closeSshSession, showOk, withBusy],
   );
 
   return (

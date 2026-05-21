@@ -49,6 +49,28 @@ pub struct Group {
     pub icon: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PortForwardStatus {
+    Connected,
+    Disconnected,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedPortForward {
+    pub id: String,
+    pub label: String,
+    pub connection_id: String,
+    pub connection_name: String,
+    pub host: String,
+    pub username: String,
+    pub local_addr: String,
+    pub remote_addr: String,
+    pub created_at: DateTime<Utc>,
+    pub last_started_at: Option<DateTime<Utc>>,
+    pub last_stopped_at: Option<DateTime<Utc>>,
+    pub status: PortForwardStatus,
+}
+
 impl Default for SshConfig {
     fn default() -> Self {
         Self {

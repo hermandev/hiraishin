@@ -8,7 +8,9 @@ use rusqlite::{params, Connection as SqliteConnection, OptionalExtension};
 
 use crate::{
     domain::{
-        models::connections::{Connection as SshConnection, Group, SshConfig},
+        models::connections::{
+            Connection as SshConnection, Group, PortForwardStatus, SavedPortForward, SshConfig,
+        },
         repository::{connection_repository::ConnectionRepository, RepoResult},
         services::crypto_service::CryptoService,
     },
@@ -82,6 +84,23 @@ impl ConnectionRepositoryImpl {
                 CREATE INDEX IF NOT EXISTS idx_connections_group ON connections(group_id);
                 CREATE INDEX IF NOT EXISTS idx_connections_name ON connections(name);
                 CREATE INDEX IF NOT EXISTS idx_connections_last_used ON connections(last_used_at);
+
+                CREATE TABLE IF NOT EXISTS port_forwards (
+                    id TEXT PRIMARY KEY,
+                    label TEXT NOT NULL,
+                    connection_id TEXT NOT NULL,
+                    connection_name TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    local_addr TEXT NOT NULL,
+                    remote_addr TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_started_at TEXT,
+                    last_stopped_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_port_forwards_connection ON port_forwards(connection_id);
+                CREATE INDEX IF NOT EXISTS idx_port_forwards_label ON port_forwards(label);
                 "#,
         )?;
         Ok(())
@@ -224,6 +243,24 @@ impl ConnectionRepositoryImpl {
             last_used_at,
             tags,
         })
+    }
+
+    fn parse_datetime(value: String) -> DbResult<chrono::DateTime<chrono::Utc>> {
+        chrono::DateTime::parse_from_rfc3339(&value)
+            .map_err(|e| {
+                DbError::Sqlite(rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                ))
+            })
+            .map(|date| date.with_timezone(&chrono::Utc))
+    }
+
+    fn parse_optional_datetime(
+        value: Option<String>,
+    ) -> DbResult<Option<chrono::DateTime<chrono::Utc>>> {
+        value.map(Self::parse_datetime).transpose()
     }
 }
 
@@ -503,6 +540,161 @@ impl ConnectionRepository for ConnectionRepositoryImpl {
             params![id],
         )?;
         let affected = conn_lock.execute("DELETE FROM groups WHERE id = ?1", params![id])?;
+        if affected == 0 {
+            return Err(Box::new(DbError::NotFound(id.to_string())));
+        }
+        Ok(())
+    }
+
+    async fn save_port_forward(&self, forward: &SavedPortForward) -> RepoResult<()> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        conn_lock.execute(
+            r#"
+            INSERT OR REPLACE INTO port_forwards
+            (id, label, connection_id, connection_name, host, username, local_addr, remote_addr, created_at, last_started_at, last_stopped_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "#,
+            params![
+                forward.id,
+                forward.label,
+                forward.connection_id,
+                forward.connection_name,
+                forward.host,
+                forward.username,
+                forward.local_addr,
+                forward.remote_addr,
+                forward.created_at.to_rfc3339(),
+                forward.last_started_at.map(|d| d.to_rfc3339()),
+                forward.last_stopped_at.map(|d| d.to_rfc3339()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn get_port_forward(&self, id: &str) -> RepoResult<Option<SavedPortForward>> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        let mut stmt = conn_lock.prepare(
+            r#"
+            SELECT id, label, connection_id, connection_name, host, username, local_addr, remote_addr,
+                   created_at, last_started_at, last_stopped_at
+            FROM port_forwards WHERE id = ?1
+            "#,
+        )?;
+        let row = stmt
+            .query_row(params![id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                ))
+            })
+            .optional()?;
+
+        row.map(
+            |(
+                id,
+                label,
+                connection_id,
+                connection_name,
+                host,
+                username,
+                local_addr,
+                remote_addr,
+                created_at,
+                last_started_at,
+                last_stopped_at,
+            )| {
+                Ok(SavedPortForward {
+                    id,
+                    label,
+                    connection_id,
+                    connection_name,
+                    host,
+                    username,
+                    local_addr,
+                    remote_addr,
+                    created_at: Self::parse_datetime(created_at)?,
+                    last_started_at: Self::parse_optional_datetime(last_started_at)?,
+                    last_stopped_at: Self::parse_optional_datetime(last_stopped_at)?,
+                    status: PortForwardStatus::Disconnected,
+                })
+            },
+        )
+        .transpose()
+        .map_err(|e: DbError| anyhow::anyhow!(e).into())
+    }
+
+    async fn get_all_port_forwards(&self) -> RepoResult<Vec<SavedPortForward>> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        let mut stmt = conn_lock.prepare(
+            r#"
+            SELECT id, label, connection_id, connection_name, host, username, local_addr, remote_addr,
+                   created_at, last_started_at, last_stopped_at
+            FROM port_forwards ORDER BY label
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<String>>(10)?,
+            ))
+        })?;
+
+        let mut forwards = Vec::new();
+        for row in rows {
+            let (
+                id,
+                label,
+                connection_id,
+                connection_name,
+                host,
+                username,
+                local_addr,
+                remote_addr,
+                created_at,
+                last_started_at,
+                last_stopped_at,
+            ) = row?;
+            forwards.push(SavedPortForward {
+                id,
+                label,
+                connection_id,
+                connection_name,
+                host,
+                username,
+                local_addr,
+                remote_addr,
+                created_at: Self::parse_datetime(created_at).map_err(|e| anyhow::anyhow!(e))?,
+                last_started_at: Self::parse_optional_datetime(last_started_at)
+                    .map_err(|e| anyhow::anyhow!(e))?,
+                last_stopped_at: Self::parse_optional_datetime(last_stopped_at)
+                    .map_err(|e| anyhow::anyhow!(e))?,
+                status: PortForwardStatus::Disconnected,
+            });
+        }
+        Ok(forwards)
+    }
+
+    async fn delete_port_forward(&self, id: &str) -> RepoResult<()> {
+        let conn_lock = self.conn.lock().expect("Error Connection");
+        let affected = conn_lock.execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
         if affected == 0 {
             return Err(Box::new(DbError::NotFound(id.to_string())));
         }

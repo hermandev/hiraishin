@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 
 import { routeTree } from "./routeTree.gen";
+import { SshTerminalProvider } from "./shared/provider/ssh-terminals";
 import TanStackQueryProvider from "./shared/provider/tanstack-query";
 import { ThemeProvider } from "./shared/provider/theme";
 
@@ -22,7 +23,9 @@ if (!rootElement.innerHTML) {
     <StrictMode>
       <ThemeProvider>
         <TanStackQueryProvider>
-          <RouterProvider router={router} />
+          <SshTerminalProvider>
+            <RouterProvider router={router} />
+          </SshTerminalProvider>
         </TanStackQueryProvider>
       </ThemeProvider>
     </StrictMode>,
