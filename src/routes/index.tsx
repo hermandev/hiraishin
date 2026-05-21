@@ -7,6 +7,7 @@ import {
   Plus,
   RefreshCcw,
   Save,
+  ScrollText,
   Search,
   Server,
   TerminalSquare,
@@ -43,6 +44,7 @@ import {
   type TerminalTab,
   useSshTerminals,
 } from "@/shared/provider/ssh-terminals";
+import { toast as sonnerToast } from "sonner";
 
 export const Route = createFileRoute("/")({
   component: RouteComponent,
@@ -65,8 +67,6 @@ type ConnectionDraft = {
   timeoutSecs: string;
   keepaliveInterval: string;
 };
-
-type Toast = { kind: "ok" | "error"; message: string };
 
 function emptyDraft(): ConnectionDraft {
   return {
@@ -156,7 +156,6 @@ function RouteComponent() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [draft, setDraft] = useState(emptyDraft);
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<Toast | null>(null);
   const {
     activeTerminal,
     activeTerminalId,
@@ -186,14 +185,11 @@ function RouteComponent() {
   }, [connections, query]);
 
   const showOk = useCallback((message: string) => {
-    setToast({ kind: "ok", message });
+    sonnerToast.success(message);
   }, []);
 
   const showError = useCallback((error: unknown) => {
-    setToast({
-      kind: "error",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    sonnerToast.error(error instanceof Error ? error.message : String(error));
   }, []);
 
   const loadData = useCallback(async () => {
@@ -225,7 +221,6 @@ function RouteComponent() {
   const withBusy = useCallback(
     async (task: () => Promise<void>) => {
       setBusy(true);
-      setToast(null);
       try {
         await task();
       } catch (error) {
@@ -346,21 +341,16 @@ function RouteComponent() {
         />
 
         <div className="flex items-center gap-2">
-          {toast && (
-            <Badge
-              className={
-                toast.kind === "ok"
-                  ? "border-primary/40 bg-primary/10"
-                  : "border-destructive/40 bg-destructive/10 text-destructive"
-              }
-            >
-              {toast.message}
-            </Badge>
-          )}
           <Link to="/port-forward">
             <Button variant="outline">
               <PlugZap />
               Port Forward
+            </Button>
+          </Link>
+          <Link to="/script-runner">
+            <Button variant="outline">
+              <ScrollText />
+              Script Runner
             </Button>
           </Link>
           <Button

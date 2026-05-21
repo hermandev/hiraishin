@@ -208,6 +208,26 @@ impl SshService for RusshSshService {
         String::from_utf8(output).map_err(Into::into)
     }
 
+    async fn exec_session(
+        &self,
+        config: SshConfig,
+        command: &str,
+    ) -> SshResult<Box<dyn SshSession>> {
+        let handle = self.connect_handle(&config).await?;
+        let channel = handle.channel_open_session().await?;
+        channel.exec(true, command).await?;
+
+        let id = Uuid::new_v4().to_string();
+        Ok(Box::new(RusshSession {
+            metadata: Self::metadata(id.clone(), &config),
+            id,
+            handle,
+            channel,
+            read_buffer: VecDeque::new(),
+            active: true,
+        }))
+    }
+
     async fn test_connection(&self, config: SshConfig) -> SshResult<bool> {
         let handle = self.connect_handle(&config).await?;
         handle
@@ -297,7 +317,10 @@ impl SshSession for RusshSession {
                 | Ok(Some(ChannelMsg::ExtendedData { data, .. })) => {
                     self.read_buffer.extend(data);
                 }
-                Ok(Some(ChannelMsg::Eof)) | Ok(Some(ChannelMsg::Close)) | Ok(None) => {
+                Ok(Some(ChannelMsg::ExitStatus { .. }))
+                | Ok(Some(ChannelMsg::Eof))
+                | Ok(Some(ChannelMsg::Close))
+                | Ok(None) => {
                     self.active = false;
                 }
                 Ok(Some(_)) => {}

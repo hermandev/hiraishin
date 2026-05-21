@@ -23,12 +23,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, type Connection, type PortForwardInfo } from "@/shared/api/tauri";
 import { IconPlugConnectedX } from "@tabler/icons-react";
+import { toast as sonnerToast } from "sonner";
 
 export const Route = createFileRoute("/port-forward")({
   component: PortForwardRoute,
 });
-
-type Toast = { kind: "ok" | "error"; message: string };
 
 function PortForwardRoute() {
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -38,7 +37,6 @@ function PortForwardRoute() {
   const [localAddr, setLocalAddr] = useState("127.0.0.1:9000");
   const [remoteAddr, setRemoteAddr] = useState("127.0.0.1:80");
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<Toast | null>(null);
 
   const selectedConnection = useMemo(
     () =>
@@ -58,14 +56,11 @@ function PortForwardRoute() {
   }, [forwards]);
 
   const showOk = useCallback((message: string) => {
-    setToast({ kind: "ok", message });
+    sonnerToast.success(message);
   }, []);
 
   const showError = useCallback((error: unknown) => {
-    setToast({
-      kind: "error",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    sonnerToast.error(error instanceof Error ? error.message : String(error));
   }, []);
 
   const loadData = useCallback(async () => {
@@ -103,7 +98,6 @@ function PortForwardRoute() {
     if (!selectedConnection) return;
 
     setBusy(true);
-    setToast(null);
     api
       .sshStartLocalPortForward(selectedConnection, label, localAddr, remoteAddr)
       .then((forward) => {
@@ -117,7 +111,6 @@ function PortForwardRoute() {
 
   const stopForward = (forward: PortForwardInfo) => {
     setBusy(true);
-    setToast(null);
     api
       .sshStopLocalPortForward(forward.id)
       .then(() => {
@@ -136,7 +129,6 @@ function PortForwardRoute() {
 
   const connectForward = (forward: PortForwardInfo) => {
     setBusy(true);
-    setToast(null);
     api
       .sshConnectSavedLocalPortForward(forward.id)
       .then((nextForward) => {
@@ -153,7 +145,6 @@ function PortForwardRoute() {
 
   const deleteForward = (forward: PortForwardInfo) => {
     setBusy(true);
-    setToast(null);
     api
       .sshDeleteLocalPortForward(forward.id)
       .then(() => {
@@ -179,17 +170,6 @@ function PortForwardRoute() {
             Manage multiple SSH local forwards per server
           </div>
         </div>
-        {toast && (
-          <Badge
-            className={
-              toast.kind === "ok"
-                ? "border-primary/40 bg-primary/10"
-                : "border-destructive/40 bg-destructive/10 text-destructive"
-            }
-          >
-            {toast.message}
-          </Badge>
-        )}
         <Button size="icon-sm" variant="ghost" onClick={() => void loadData()}>
           <RefreshCcw />
         </Button>

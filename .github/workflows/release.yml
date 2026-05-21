@@ -25,10 +25,58 @@ jobs:
             rust-targets: ""
 
     runs-on: ${{ matrix.platform }}
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Import Apple Developer Certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          security import certificate.p12 \
+            -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -T /usr/bin/productsign
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            build.keychain
+
+          security find-identity -v -p codesigning build.keychain
+
+      - name: Verify Certificate
+        if: matrix.platform == 'macos-latest'
+        run: |
+          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" || true)
+
+          if [ -z "$CERT_INFO" ]; then
+            echo "Developer ID Application certificate not found."
+            security find-identity -v -p codesigning build.keychain
+            exit 1
+          fi
+
+          CERT_ID=$(echo "$CERT_INFO" | head -n 1 | awk -F'"' '{print $2}')
+
+          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
+          echo "Certificate imported: $CERT_ID"
 
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -71,10 +119,25 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: app-v__VERSION__
           releaseName: Hiraishin v__VERSION__
-          releaseBody: See the assets below to download Hiraishin for your platform.
+          releaseBody: |
+            ## Release Notes
+
+            - Added encrypted local database support for stored SSH credentials and private keys.
+            - Added persistent port forward management with labels, saved records, and realtime connection status.
+            - Added Script Runner with multiple saved scripts per server, parallel runs, stop/edit controls, and searchable script list.
+            - Added CodeMirror script editing with light/dark theme support.
+            - Added bottom-right Sonner toast notifications for action and test results.
+            - Improved SSH terminal tabs so they stay open and connected when navigating between pages.
+            - Improved script output streaming with stdout/stderr and bash trace details.
+
+            See the assets below to download Hiraishin for your platform.
           releaseDraft: true
           prerelease: false
           tauriScript: bunx tauri

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::domain::{
-    models::connections::{Connection, Group, SavedPortForward},
+    models::connections::{Connection, Group, SavedPortForward, SavedScript},
     repository::RepoResult,
 };
 
@@ -29,4 +29,10 @@ pub trait ConnectionRepository: Send + Sync {
     async fn get_port_forward(&self, id: &str) -> RepoResult<Option<SavedPortForward>>;
     async fn get_all_port_forwards(&self) -> RepoResult<Vec<SavedPortForward>>;
     async fn delete_port_forward(&self, id: &str) -> RepoResult<()>;
+
+    // Script runner CRUD
+    async fn save_script(&self, script: &SavedScript) -> RepoResult<()>;
+    async fn get_script(&self, id: &str) -> RepoResult<Option<SavedScript>>;
+    async fn get_all_scripts(&self) -> RepoResult<Vec<SavedScript>>;
+    async fn delete_script(&self, id: &str) -> RepoResult<()>;
 }

@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 
 import { routeTree } from "./routeTree.gen";
+import { Toaster } from "./components/ui/sonner";
 import { SshTerminalProvider } from "./shared/provider/ssh-terminals";
 import TanStackQueryProvider from "./shared/provider/tanstack-query";
 import { ThemeProvider } from "./shared/provider/theme";
@@ -25,6 +26,7 @@ if (!rootElement.innerHTML) {
         <TanStackQueryProvider>
           <SshTerminalProvider>
             <RouterProvider router={router} />
+            <Toaster />
           </SshTerminalProvider>
         </TanStackQueryProvider>
       </ThemeProvider>
